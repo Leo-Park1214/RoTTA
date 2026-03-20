@@ -1,0 +1,79 @@
+import torch
+import torch.nn as nn
+from copy import deepcopy
+from .sign_power_layer import SignPow
+from .sign_power_layer import scaling_func
+
+class MomentumBN(nn.Module):
+    def __init__(self, bn_layer: nn.BatchNorm2d, momentum):
+        super().__init__()
+        self.num_features = bn_layer.num_features
+        self.momentum = momentum
+        if bn_layer.track_running_stats and bn_layer.running_var is not None and bn_layer.running_mean is not None:
+            self.register_buffer("source_mean", deepcopy(bn_layer.running_mean))
+            self.register_buffer("source_var", deepcopy(bn_layer.running_var))
+            self.source_num = bn_layer.num_batches_tracked
+        self.weight = deepcopy(bn_layer.weight)
+        self.bias = deepcopy(bn_layer.bias)
+
+        self.register_buffer("target_mean", torch.zeros_like(self.source_mean))
+        self.register_buffer("target_var", torch.ones_like(self.source_var))
+        self.eps = bn_layer.eps
+
+        self.current_mu = None
+        self.current_sigma = None
+        
+        self.sign_pow = SignPow(init_alpha=0.0)
+        self.sign_pow.requires_grad_(True)
+        
+    def forward(self, x):
+        raise NotImplementedError
+
+
+class RobustBN1d(MomentumBN):
+    def forward(self, x):
+        if self.training:
+            b_var, b_mean = torch.var_mean(x, dim=0, unbiased=False, keepdim=False)  # (C,)
+            mean = (1 - self.momentum) * self.source_mean + self.momentum * b_mean
+            var = (1 - self.momentum) * self.source_var + self.momentum * b_var
+            self.source_mean, self.source_var = deepcopy(mean.detach()), deepcopy(var.detach())
+            mean, var = mean.view(1, -1), var.view(1, -1)
+        else:
+            mean, var = self.source_mean.view(1, -1), self.source_var.view(1, -1)
+
+        x = (x - mean) / torch.sqrt(var + self.eps)
+        weight = self.weight.view(1, -1)
+        bias = self.bias.view(1, -1)
+        
+        x = x * weight + bias
+        
+        # 여기서 x 를 detacth 할지 아니면 x prime 으로 저장하고 x 를 남겨서 연산 그래프를 넘길지 고민해봐야할듯
+        x_before_signpow = x.detach()
+        x_prime = self.sign_pow(x) 
+        return scaling_func(x_before_signpow, x_prime)#x_mean  # x를 x_before_signpow의 min/max 범위로 affine scaling
+        
+        #return x * weight + bias
+
+
+class RobustBN2d(MomentumBN):
+    def forward(self, x):
+        if self.training:
+            b_var, b_mean = torch.var_mean(x, dim=[0, 2, 3], unbiased=False, keepdim=False)  # (C,)
+            mean = (1 - self.momentum) * self.source_mean + self.momentum * b_mean
+            var = (1 - self.momentum) * self.source_var + self.momentum * b_var
+            self.source_mean, self.source_var = deepcopy(mean.detach()), deepcopy(var.detach())
+            mean, var = mean.view(1, -1, 1, 1), var.view(1, -1, 1, 1)
+        else:
+            mean, var = self.source_mean.view(1, -1, 1, 1), self.source_var.view(1, -1, 1, 1)
+
+        x = (x - mean) / torch.sqrt(var + self.eps)
+        weight = self.weight.view(1, -1, 1, 1)
+        bias = self.bias.view(1, -1, 1, 1)
+
+        x = x * weight + bias
+        
+        # 여기서 x 를 detacth 할지 아니면 x prime 으로 저장하고 x 를 남겨서 연산 그래프를 넘길지 고민해봐야할듯
+        x_before_signpow = x.detach()
+        x_prime = self.sign_pow(x) 
+        return scaling_func(x_before_signpow, x_prime)#x_mean  # x를 x_before_signpow의 min/max 범위로 affine scaling
+        #return x * weight + bias
