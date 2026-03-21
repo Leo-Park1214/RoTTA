@@ -10,7 +10,6 @@ from ..utils.bn_layers_signpow import RobustBN1d as RobustBN1d_sp
 from ..utils.bn_layers_signpow import RobustBN2d as RobustBN2d_sp
 from ..utils.utils import set_named_submodule, get_named_submodule
 
-
 class PoTTA(BaseAdapter):
     def __init__(self, cfg, model, optimizer, scalar=False):
         # BaseAdapter.__init__ 안에서 configure_model()이 호출되므로 먼저 생성
@@ -19,6 +18,7 @@ class PoTTA(BaseAdapter):
             "in_range_count": 0,
             "total_count": 0,
         }
+        self.ds_name = cfg.CORRUPTION.DATASET
         self.adapt_step = 0
 
         super(PoTTA, self).__init__(cfg, model, optimizer, scalar)
@@ -92,6 +92,7 @@ class PoTTA(BaseAdapter):
         self.adapt_step += 1
         self._log_param_update_to_wandb(model, old_params, loss)
 
+        
         return outputs
 
     def _log_param_update_to_wandb(self, model, old_params, loss=None):
@@ -172,12 +173,18 @@ class PoTTA(BaseAdapter):
                 NewBN = RobustBN2d_sp if self.scalar else RobustBN2d
             else:
                 raise RuntimeError()
-
-            momentum_bn = NewBN(
-                bn_layer,
-                self.cfg.ADAPTER.RoTTA.ALPHA
-            )
-
+            if self.ds_name == "cifar10":
+                momentum_bn = NewBN(
+                    bn_layer,
+                    self.cfg.ADAPTER.RoTTA.ALPHA/10
+                )
+            elif self.ds_name == "cifar100":
+                momentum_bn = NewBN(
+                    bn_layer,
+                    self.cfg.ADAPTER.RoTTA.ALPHA
+                )
+            else:
+                raise RuntimeError(f"Unsupported dataset: {self.ds_name}")
             if not self.scalar:
                 momentum_bn.requires_grad_(True)
 
@@ -188,5 +195,5 @@ class PoTTA(BaseAdapter):
                 self._make_bn_output_hook()
             )
             self._bn_hooks.append(hook_handle)
-
+        print(f"Configured model with {len(normlayer_names)} BN layers for PoTTA.")
         return model

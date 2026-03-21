@@ -2,6 +2,7 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 import logging
+from torch.nn import functional as F
 
 
 class BaseAdapter(nn.Module):

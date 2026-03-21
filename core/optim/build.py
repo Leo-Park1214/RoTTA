@@ -1,5 +1,5 @@
 import torch.optim as optim
-
+from ..utils.sam import SAM
 
 def build_optimizer(cfg):
     def optimizer(params):
@@ -15,6 +15,15 @@ def build_optimizer(cfg):
                              dampening=cfg.OPTIM.DAMPENING,
                              weight_decay=cfg.OPTIM.WD,
                              nesterov=cfg.OPTIM.NESTEROV)
+        elif cfg.OPTIM.METHOD == 'SAM_Adam':
+            base_optimizer = optim.Adam
+            
+            return SAM(params, base_optimizer, lr=cfg.OPTIM.LR, momentum=cfg.OPTIM.MOMENTUM)
+
+        elif cfg.OPTIM.METHOD == 'SAM_SGD':
+            base_optimizer = optim.SGD
+            return SAM(params, base_optimizer, lr=cfg.OPTIM.LR, momentum=cfg.OPTIM.MOMENTUM)
+
         else:
             raise NotImplementedError
 
