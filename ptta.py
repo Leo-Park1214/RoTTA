@@ -1,6 +1,8 @@
 import logging
+import os
 import torch
 import argparse
+import wandb
 
 from core.configs import cfg
 from core.utils import *
@@ -14,40 +16,103 @@ from setproctitle import setproctitle
 
 def testTimeAdaptation(cfg):
     logger = logging.getLogger("TTA.test_time")
+
     # model, optimizer
     model = build_model(cfg)
-
     optimizer = build_optimizer(cfg)
-
     tta_adapter = build_adapter(cfg)
 
     if ("sp" in cfg.ADAPTER.NAME) or ("potta" == cfg.ADAPTER.NAME):
         tta_model = tta_adapter(cfg, model, optimizer, scalar=True)
     else:
         tta_model = tta_adapter(cfg, model, optimizer)
+
     tta_model.cuda()
 
-    loader, processor = build_loader(cfg, cfg.CORRUPTION.DATASET, cfg.CORRUPTION.TYPE, cfg.CORRUPTION.SEVERITY)
+    # wandb init을 여기서 수행
+    if wandb.run is None:
+        api_key = os.environ.get("WANDB_API_KEY", None)
+        if api_key is not None:
+            try:
+                wandb.login(key=api_key)
+            except Exception:
+                pass
+
+        wandb.init(
+            project="rotta-tta",
+            name=f"{cfg.CORRUPTION.DATASET}_{cfg.ADAPTER.NAME}_{cfg.CORRUPTION.TYPE}_{cfg.CORRUPTION.SEVERITY}",
+            config={
+                "dataset": cfg.CORRUPTION.DATASET,
+                "adapter": cfg.ADAPTER.NAME,
+                "corruption_type": cfg.CORRUPTION.TYPE,
+                "severity": cfg.CORRUPTION.SEVERITY,
+                "steps": cfg.OPTIM.STEPS,
+                "seed": cfg.SEED,
+                "alpha": getattr(cfg.ADAPTER.RoTTA, "ALPHA", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "nu": getattr(cfg.ADAPTER.RoTTA, "NU", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "update_frequency": getattr(cfg.ADAPTER.RoTTA, "UPDATE_FREQUENCY", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "memory_size": getattr(cfg.ADAPTER.RoTTA, "MEMORY_SIZE", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "lambda_t": getattr(cfg.ADAPTER.RoTTA, "LAMBDA_T", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "lambda_u": getattr(cfg.ADAPTER.RoTTA, "LAMBDA_U", None) if hasattr(cfg.ADAPTER, "RoTTA") else None,
+                "scalar": (("sp" in cfg.ADAPTER.NAME) or ("potta" == cfg.ADAPTER.NAME)),
+            },
+            reinit=False,
+        )
+
+    loader, processor = build_loader(
+        cfg,
+        cfg.CORRUPTION.DATASET,
+        cfg.CORRUPTION.TYPE,
+        cfg.CORRUPTION.SEVERITY
+    )
 
     tbar = tqdm(loader)
     for batch_id, data_package in enumerate(tbar):
-        data, label, domain = data_package["image"], data_package['label'], data_package['domain']
+        data, label, domain = data_package["image"], data_package["label"], data_package["domain"]
+
         if len(label) == 1:
             continue  # ignore the final single point
+
         data, label = data.cuda(), label.cuda()
         output = tta_model(data)
+
         predict = torch.argmax(output, dim=1)
         accurate = (predict == label)
         processor.process(accurate, domain)
+
+        # adapter 내부에서 쌓아둔 wandb 로그를 바깥에서 기록
+        if hasattr(tta_model, "pop_wandb_logs"):
+            pending_logs = tta_model.pop_wandb_logs()
+            current_acc = processor.cumulative_acc()
+
+            for log_dict in pending_logs:
+                log_dict["acc"] = current_acc
+                log_dict["batch_id"] = batch_id
+                if wandb.run is not None:
+                    wandb.log(log_dict, step=log_dict["tta_step"])
+
         if batch_id % 10 == 0:
             if hasattr(tta_model, "mem"):
-                tbar.set_postfix(acc=processor.cumulative_acc(), bank=tta_model.mem.get_occupancy())
+                tbar.set_postfix(
+                    acc=processor.cumulative_acc(),
+                    bank=tta_model.mem.get_occupancy()
+                )
             else:
                 tbar.set_postfix(acc=processor.cumulative_acc())
 
     processor.calculate()
 
+    final_acc = processor.cumulative_acc()
+    if wandb.run is not None:
+        wandb.log({
+            "final_acc": final_acc,
+            "final_results": processor.info()
+        })
+
     logger.info(f"All Results\n{processor.info()}")
+
+    if wandb.run is not None:
+        wandb.finish()
 
 
 def main():
@@ -103,10 +168,12 @@ def main():
     logger = setup_logger('TTA', cfg.OUTPUT_DIR, 0, filename=cfg.LOG_DEST)
     logger.info(args)
 
-    logger.info(f"Loaded configuration file: \n"
-                f"\tadapter: {args.adapter_config_file}\n"
-                f"\tdataset: {args.dataset_config_file}\n"
-                f"\torder: {args.order_config_file}")
+    logger.info(
+        f"Loaded configuration file: \n"
+        f"\tadapter: {args.adapter_config_file}\n"
+        f"\tdataset: {args.dataset_config_file}\n"
+        f"\torder: {args.order_config_file}"
+    )
     logger.info("Running with config:\n{}".format(cfg))
 
     set_random_seed(cfg.SEED)

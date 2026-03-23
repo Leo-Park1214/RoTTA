@@ -27,14 +27,41 @@ def scaling_func(x, x_prime, eps=1e-6):
     y = (x_prime - xp_min) * scale + x_min
     return y
 
+
 class SignPow(nn.Module):
-    def __init__(self, init_alpha=0.0, eps=1e-6):
+    def __init__(self, num_channels, init_alpha=0.0, eps=1e-6):
         super().__init__()
-        self.raw_alpha = nn.Parameter(torch.tensor([init_alpha]))
+        # 채널별 alpha 파라미터
+        self.raw_alpha = nn.Parameter(torch.full((num_channels,), init_alpha))
         self.eps = eps
 
     def forward(self, x):
-        alpha = 1 + F.tanh(self.raw_alpha) * 0.1  # alpha > 0 보장)
-        
-        #print(alpha)
+        # alpha 범위: 0.9 ~ 1.1
+        alpha = 1 + torch.tanh(self.raw_alpha) * 0.1
+
+        # x가 (N, C, H, W)라고 가정
+        alpha = alpha.view(1, -1, 1, 1)
+
         return torch.sign(x) * (torch.abs(x) + self.eps) ** alpha
+
+"""
+class SignPow(nn.Module):
+    def __init__(self, num_channels, init_alpha=0.0, eps=1e-6):
+        super().__init__()
+        self.raw_alpha = nn.Parameter(torch.full((num_channels,), init_alpha))
+        self.eps = eps
+
+    def forward(self, x):
+        # alpha 범위: 0.9 ~ 1.1
+        alpha = 1 + torch.tanh(self.raw_alpha) * 0.1
+        alpha = alpha.view(1, -1, 1, 1)
+
+        y = torch.sign(x) * (torch.abs(x)) ** alpha
+
+        # forward 값은 그대로 유지
+        # 단, x==0 위치는 backward만 막아서 grad=0
+        mask = (x != 0).to(x.dtype)
+        y = y * mask + y.detach() * (1 - mask)
+
+        return y
+"""

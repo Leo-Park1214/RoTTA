@@ -23,7 +23,7 @@ class MomentumBN(nn.Module):
         self.current_mu = None
         self.current_sigma = None
         
-        self.sign_pow = SignPow(init_alpha=0.0)
+        self.sign_pow = SignPow(init_alpha=0.0, num_channels=self.num_features)
         self.sign_pow.requires_grad_(True)
         
     def forward(self, x):
@@ -40,19 +40,14 @@ class RobustBN1d(MomentumBN):
             mean, var = mean.view(1, -1), var.view(1, -1)
         else:
             mean, var = self.source_mean.view(1, -1), self.source_var.view(1, -1)
-
+        
+        #x = self.sign_pow(x)
         x = (x - mean) / torch.sqrt(var + self.eps)
+    
         weight = self.weight.view(1, -1)
         bias = self.bias.view(1, -1)
-        
-        x = x * weight + bias
-        
-        # 여기서 x 를 detacth 할지 아니면 x prime 으로 저장하고 x 를 남겨서 연산 그래프를 넘길지 고민해봐야할듯
-        x_before_signpow = x.detach()
-        x_prime = self.sign_pow(x) 
-        return scaling_func(x_before_signpow, x_prime)#x_mean  # x를 x_before_signpow의 min/max 범위로 affine scaling
-        
-        #return x * weight + bias
+
+        return self.sign_pow(x * weight + bias)
 
 
 class RobustBN2d(MomentumBN):
@@ -66,14 +61,10 @@ class RobustBN2d(MomentumBN):
         else:
             mean, var = self.source_mean.view(1, -1, 1, 1), self.source_var.view(1, -1, 1, 1)
 
+        #x = self.sign_pow(x)
         x = (x - mean) / torch.sqrt(var + self.eps)
+        
         weight = self.weight.view(1, -1, 1, 1)
         bias = self.bias.view(1, -1, 1, 1)
-
-        x = x * weight + bias
         
-        # 여기서 x 를 detacth 할지 아니면 x prime 으로 저장하고 x 를 남겨서 연산 그래프를 넘길지 고민해봐야할듯
-        x_before_signpow = x.detach()
-        x_prime = self.sign_pow(x) 
-        return scaling_func(x_before_signpow, x_prime)#x_mean  # x를 x_before_signpow의 min/max 범위로 affine scaling
-        #return x * weight + bias
+        return self.sign_pow(x * weight + bias)
