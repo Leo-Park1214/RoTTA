@@ -1,5 +1,5 @@
 import torch.optim as optim
-from ..utils.sam import SAM
+from .sam import SAM
 
 def build_optimizer(cfg):
     def optimizer(params):

@@ -14,7 +14,7 @@ from tqdm import tqdm
 from setproctitle import setproctitle
 
 
-def testTimeAdaptation(cfg):
+def testTimeAdaptation(cfg, name):
     logger = logging.getLogger("TTA.test_time")
 
     # model, optimizer
@@ -40,7 +40,7 @@ def testTimeAdaptation(cfg):
 
         wandb.init(
             project="rotta-tta",
-            name=f"{cfg.CORRUPTION.DATASET}_{cfg.ADAPTER.NAME}_{cfg.CORRUPTION.TYPE}_{cfg.CORRUPTION.SEVERITY}",
+            name=name,
             config={
                 "dataset": cfg.CORRUPTION.DATASET,
                 "adapter": cfg.ADAPTER.NAME,
@@ -81,6 +81,10 @@ def testTimeAdaptation(cfg):
         processor.process(accurate, domain)
 
         # adapter 내부에서 쌓아둔 wandb 로그를 바깥에서 기록
+        # 새로 기록되는 key 예시:
+        # - param_delta/conv_mean_abs
+        # - param_delta/conv_signpow_mean_abs
+        # - param_delta/other_mean_abs
         if hasattr(tta_model, "pop_wandb_logs"):
             pending_logs = tta_model.pop_wandb_logs()
             current_acc = processor.cumulative_acc()
@@ -138,11 +142,13 @@ def main():
         default="",
         help="path to order config file",
         type=str)
+    parser.add_argument("--name", type=str, default="", help="name for wandb logging")
     parser.add_argument(
         'opts',
         help='modify the configuration by command line',
         nargs=argparse.REMAINDER,
         default=None)
+    
 
     args = parser.parse_args()
 
@@ -178,7 +184,7 @@ def main():
 
     set_random_seed(cfg.SEED)
 
-    testTimeAdaptation(cfg)
+    testTimeAdaptation(cfg, name=args.name)
 
 
 if __name__ == "__main__":

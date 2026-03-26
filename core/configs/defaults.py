@@ -80,7 +80,7 @@ _C.CUDNN.BENCHMARK = True
 _C.DESC = ""
 _C.SEED = -1
 _C.OUTPUT_DIR = "./output"
-_C.DATA_DIR = "./datasets"
+_C.DATA_DIR = "/data1/moon175611/datasets"
 _C.CKPT_DIR = "./ckpt"
 _C.LOG_DEST = "log.txt"
 

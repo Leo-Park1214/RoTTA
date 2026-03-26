@@ -1,0 +1,62 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        m: []
+        python_version: 3.9.25
+        t:
+            "1":
+                - 1
+                - 41
+                - 49
+                - 63
+            "3":
+                - 13
+                - 16
+            "4": 3.9.25
+            "5": 0.25.1
+            "10":
+                - 20
+            "12": 0.25.1
+            "13": linux-x86_64
+adapter:
+    value: rotta_sp
+alpha:
+    value: 0.05
+corruption_type:
+    value:
+        - motion_blur
+        - snow
+        - fog
+        - shot_noise
+        - defocus_blur
+        - contrast
+        - zoom_blur
+        - brightness
+        - frost
+        - elastic_transform
+        - glass_blur
+        - gaussian_noise
+        - pixelate
+        - jpeg_compression
+        - impulse_noise
+dataset:
+    value: cifar100
+lambda_t:
+    value: 1
+lambda_u:
+    value: 1
+memory_size:
+    value: 64
+nu:
+    value: 0.001
+scalar:
+    value: true
+seed:
+    value: -1
+severity:
+    value:
+        - 5
+steps:
+    value: 1
+update_frequency:
+    value: 64

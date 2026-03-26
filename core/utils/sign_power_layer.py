@@ -37,12 +37,13 @@ class SignPow(nn.Module):
 
     def forward(self, x):
         # alpha 범위: 0.9 ~ 1.1
-        alpha = 1 + torch.tanh(self.raw_alpha) * 0.1
+        alpha = 1 + torch.tanh(self.raw_alpha) #* 0.1
 
         # x가 (N, C, H, W)라고 가정
         alpha = alpha.view(1, -1, 1, 1)
-
-        return torch.sign(x) * (torch.abs(x) + self.eps) ** alpha
+        x_prime = x.detach()  # x의 연산 그래프를 끊어서 x_prime으로 사용
+        x =  alpha * ( torch.sign(x) * (torch.abs(x) + self.eps) ** alpha)
+        return scaling_func(x, x_prime)
 
 """
 class SignPow(nn.Module):
