@@ -153,7 +153,8 @@ class RoTTA(BaseAdapter):
         for i, data in enumerate(batch_data):
             p_l = pseudo_label[i].item()
             uncertainty = entropy[i].item()
-            current_instance = (data, p_l, uncertainty)
+            prob_vec = predict[i]
+            current_instance = (data, p_l, uncertainty, prob_vec)
             self.mem.add_instance(current_instance)
             self.current_instance += 1
 

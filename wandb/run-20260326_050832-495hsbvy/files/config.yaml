@@ -1,0 +1,115 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            6j245j9gzznf1rrgfsaukzo94zdzbo5d:
+                args:
+                    - -acfg
+                    - configs/adapter/rotta_sp_cifar100.yaml
+                    - -dcfg
+                    - configs/dataset/cifar100.yaml
+                    - --name
+                    - cifar100_c_rotta_sp
+                    - OUTPUT_DIR
+                    - RoTTA/cifar100
+                codePath: ptta.py
+                codePathLocal: ptta.py
+                cpu_count: 16
+                cpu_count_logical: 32
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "1931859320832"
+                        used: "1710496358400"
+                email: moon1756111@naver.com
+                executable: /home/moon175611/miniconda3/envs/ebtta/bin/python
+                git:
+                    commit: a8e9e29b6cf02e004e43fdaee074301b573a9452
+                    remote: git@github.com:Leo-Park1214/RoTTA.git
+                gpu: NVIDIA GeForce RTX 4090
+                gpu_count: 2
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-4264ace2-57b3-9732-8a63-900f38e14731
+                    - architecture: Ada
+                      cudaCores: 16384
+                      memoryTotal: "25757220864"
+                      name: NVIDIA GeForce RTX 4090
+                      uuid: GPU-bd700c90-70c4-9647-490e-7368faad6991
+                host: ubuntu
+                memory:
+                    total: "134658064384"
+                os: Linux-6.8.0-101-generic-x86_64-with-glibc2.39
+                program: /home/moon175611/WorkSpace/one-scalar/RoTTA/ptta.py
+                python: CPython 3.9.25
+                root: /home/moon175611/WorkSpace/one-scalar/RoTTA
+                startedAt: "2026-03-26T05:08:32.914120Z"
+                writerId: 6j245j9gzznf1rrgfsaukzo94zdzbo5d
+        m: []
+        python_version: 3.9.25
+        t:
+            "1":
+                - 1
+                - 41
+                - 49
+                - 63
+            "2":
+                - 1
+                - 41
+                - 49
+                - 63
+            "3":
+                - 13
+                - 16
+                - 61
+            "4": 3.9.25
+            "5": 0.25.1
+            "10":
+                - 20
+            "12": 0.25.1
+            "13": linux-x86_64
+adapter:
+    value: rotta_sp
+alpha:
+    value: 0.05
+corruption_type:
+    value:
+        - motion_blur
+        - snow
+        - fog
+        - shot_noise
+        - defocus_blur
+        - contrast
+        - zoom_blur
+        - brightness
+        - frost
+        - elastic_transform
+        - glass_blur
+        - gaussian_noise
+        - pixelate
+        - jpeg_compression
+        - impulse_noise
+dataset:
+    value: cifar100
+lambda_t:
+    value: 1
+lambda_u:
+    value: 1
+memory_size:
+    value: 64
+nu:
+    value: 0.001
+scalar:
+    value: true
+seed:
+    value: -1
+severity:
+    value:
+        - 5
+steps:
+    value: 1
+update_frequency:
+    value: 64

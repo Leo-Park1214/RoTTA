@@ -21,5 +21,6 @@ class ConvWithSignPow(nn.Module):
 
     def forward(self, x):
         x = self.signpow(x)
-        x = self.conv(x)
+        x= self.conv(x)
+        
         return x

@@ -1,14 +1,11 @@
-import random
-import copy
-import torch
-import torch.nn.functional as F
-import numpy as np
 import math
+import torch
 
 
 class MemoryItem:
-    def __init__(self, data=None, uncertainty=0, age=0):
+    def __init__(self, data=None, prob=None, uncertainty=0, age=0):
         self.data = data
+        self.prob = prob          # shape: [num_class]
         self.uncertainty = uncertainty
         self.age = age
 
@@ -17,109 +14,109 @@ class MemoryItem:
             self.age += 1
 
     def get_data(self):
-        return self.data, self.uncertainty, self.age
+        return self.data, self.prob, self.uncertainty, self.age
 
     def empty(self):
         return self.data == "empty"
 
 
 class CSTU:
-    def __init__(self, capacity, num_class, lambda_t=1.0, lambda_u=1.0):
+    def __init__(self, capacity, num_class, lambda_t=1.0, lambda_u=1.0, lambda_balance=1.0):
         self.capacity = capacity
         self.num_class = num_class
-        self.per_class = self.capacity / self.num_class
         self.lambda_t = lambda_t
         self.lambda_u = lambda_u
+        self.lambda_balance = lambda_balance
 
-        self.data: list[list[MemoryItem]] = [[] for _ in range(self.num_class)]
+        self.data = []   # 클래스별 분리 제거
+        self.prob_sum = torch.zeros(num_class, dtype=torch.float32)
 
     def get_occupancy(self):
-        occupancy = 0
-        for data_per_cls in self.data:
-            occupancy += len(data_per_cls)
-        return occupancy
-
-    def per_class_dist(self):
-        per_class_occupied = [0] * self.num_class
-        for cls, class_list in enumerate(self.data):
-            per_class_occupied[cls] = len(class_list)
-
-        return per_class_occupied
-
-    def add_instance(self, instance):
-        assert (len(instance) == 3)
-        x, prediction, uncertainty = instance
-        new_item = MemoryItem(data=x, uncertainty=uncertainty, age=0)
-        new_score = self.heuristic_score(0, uncertainty)
-        if self.remove_instance(prediction, new_score):
-            self.data[prediction].append(new_item)
-        self.add_age()
-
-    def remove_instance(self, cls, score):
-        class_list = self.data[cls]
-        class_occupied = len(class_list)
-        all_occupancy = self.get_occupancy()
-        if class_occupied < self.per_class:
-            if all_occupancy < self.capacity:
-                return True
-            else:
-                majority_classes = self.get_majority_classes()
-                return self.remove_from_classes(majority_classes, score)
-        else:
-            return self.remove_from_classes([cls], score)
-
-    def remove_from_classes(self, classes: list[int], score_base):
-        max_class = None
-        max_index = None
-        max_score = None
-        for cls in classes:
-            for idx, item in enumerate(self.data[cls]):
-                uncertainty = item.uncertainty
-                age = item.age
-                score = self.heuristic_score(age=age, uncertainty=uncertainty)
-                if max_score is None or score >= max_score:
-                    max_score = score
-                    max_index = idx
-                    max_class = cls
-
-        if max_class is not None:
-            if max_score > score_base:
-                self.data[max_class].pop(max_index)
-                return True
-            else:
-                return False
-        else:
-            return True
-
-    def get_majority_classes(self):
-        per_class_dist = self.per_class_dist()
-        max_occupied = max(per_class_dist)
-        classes = []
-        for i, occupied in enumerate(per_class_dist):
-            if occupied == max_occupied:
-                classes.append(i)
-
-        return classes
-
-    def heuristic_score(self, age, uncertainty):
-        return self.lambda_t * 1 / (1 + math.exp(-age / self.capacity)) + self.lambda_u * uncertainty / math.log(self.num_class)
+        return len(self.data)
 
     def add_age(self):
-        for class_list in self.data:
-            for item in class_list:
-                item.increase_age()
-        return
+        for item in self.data:
+            item.increase_age()
+
+    def heuristic_score(self, age, uncertainty):
+        return (
+            self.lambda_t * 1 / (1 + math.exp(-age / self.capacity))
+            + self.lambda_u * uncertainty / math.log(self.num_class)
+        )
+
+    def uniformity_loss_from_sum(self, prob_sum, n):
+        if n == 0:
+            return 0.0
+        mean_prob = prob_sum / n
+        target = torch.ones(self.num_class, dtype=mean_prob.dtype, device=mean_prob.device) / self.num_class
+        return torch.sum((mean_prob - target) ** 2).item()
+
+    def add_instance(self, instance):
+        assert len(instance) == 4
+        x, prediction, uncertainty, prob = instance
+
+        if not isinstance(prob, torch.Tensor):
+            prob = torch.tensor(prob, dtype=torch.float32)
+        prob = prob.detach().cpu()
+
+        new_item = MemoryItem(data=x, prob=prob, uncertainty=uncertainty, age=0)
+
+        # 1) 아직 안 찼으면 바로 추가
+        if self.get_occupancy() < self.capacity:
+            self.data.append(new_item)
+            self.prob_sum += prob
+            self.add_age()
+            return True
+
+        # 2) 꽉 찼으면 "누구를 뺄지" 최적 선택
+        best_idx = None
+        best_obj = None
+
+        for idx, old_item in enumerate(self.data):
+            candidate_sum = self.prob_sum - old_item.prob + prob
+            balance_loss = self.uniformity_loss_from_sum(candidate_sum, self.capacity)
+
+            # 기존 heuristic도 같이 반영 가능
+            old_remove_score = self.heuristic_score(old_item.age, old_item.uncertainty)
+            new_keep_score = self.heuristic_score(0, uncertainty)
+
+            # 목적함수:
+            # balance_loss는 작을수록 좋음
+            # old_remove_score가 클수록 오래되고 불확실한 샘플 제거에 유리
+            # new_keep_score가 클수록 새 샘플 유지에 유리
+            obj = self.lambda_balance * balance_loss - old_remove_score + new_keep_score
+
+            if best_obj is None or obj < best_obj:
+                best_obj = obj
+                best_idx = idx
+
+        # 필요하면 "교체가 실제로 이득일 때만" 교체
+        current_balance_loss = self.uniformity_loss_from_sum(self.prob_sum, self.capacity)
+        current_obj = self.lambda_balance * current_balance_loss
+
+        if best_obj is not None and best_obj < current_obj:
+            removed = self.data.pop(best_idx)
+            self.prob_sum -= removed.prob
+            self.data.append(new_item)
+            self.prob_sum += prob
+
+        self.add_age()
+        return True
 
     def get_memory(self):
         tmp_data = []
         tmp_age = []
+        tmp_prob = []
 
-        for class_list in self.data:
-            for item in class_list:
-                tmp_data.append(item.data)
-                tmp_age.append(item.age)
+        for item in self.data:
+            tmp_data.append(item.data)
+            tmp_age.append(item.age / self.capacity)
+            tmp_prob.append(item.prob)
 
-        tmp_age = [x / self.capacity for x in tmp_age]
+        return tmp_data, tmp_age #, tmp_prob
 
-        return tmp_data, tmp_age
-
+    def get_mean_prob(self):
+        n = self.get_occupancy()
+        if n == 0:
+            return torch.zeros(self.num_class)
+        return self.prob_sum / n

@@ -6,25 +6,20 @@ def scaling_func(x, x_prime, eps=1e-6):
     """
     x, x_prime: shape = (B, C, H, W)
 
-    각 (B, C)별로 H, W 축에 대해서만 min/max를 구해서
-    x_prime을 x와 같은 min/max 범위로 affine scaling
-    x, xprime 을 연산 그래프에 넣을지 아니면 detach 할지 고민해보기
-    
+    각 (B, C)별로 H, W 축에 대해서만 mean/std를 구해서
+    x_prime을 x와 같은 channel-wise 통계로 affine scaling
+    x, x_prime 을 연산 그래프에 넣을지 아니면 detach 할지 고민해보기
     """
-    x_p_for_grad = x_prime.detach()  # x_prime의 연산 그래프를 끊어서 x_for_grad로 사용
-    
-    x_min = x.amin(dim=(2, 3), keepdim=True)       # (B, C, 1, 1)
-    x_max = x.amax(dim=(2, 3), keepdim=True)       # (B, C, 1, 1)
+    x_for_grad = x
+    x_p_for_grad = x_prime.detach()
 
-    xp_min = x_p_for_grad.amin(dim=(2, 3), keepdim=True)
-    xp_max = x_p_for_grad.amax(dim=(2, 3), keepdim=True)
+    x_mean = x_for_grad.mean(dim=(2, 3), keepdim=True)
+    x_std = x_for_grad.std(dim=(2, 3), keepdim=True, unbiased=False)
 
-    x_range = x_max - x_min
-    xp_range = xp_max - xp_min
+    xp_mean = x_p_for_grad.mean(dim=(2, 3), keepdim=True)
+    xp_std = x_p_for_grad.std(dim=(2, 3), keepdim=True, unbiased=False)
 
-    scale = x_range / (xp_range + eps)
-
-    y = (x_prime - xp_min) * scale + x_min
+    y = (x_prime - xp_mean) / (xp_std + eps) * x_std + x_mean
     return y
 
 
@@ -34,14 +29,14 @@ class SignPow(nn.Module):
         # 채널별 alpha 파라미터
         self.raw_alpha = nn.Parameter(torch.full((num_channels,), init_alpha))
         self.eps = eps
-
     def forward(self, x):
         # alpha 범위: 0.9 ~ 1.1
-        alpha = 1 + torch.tanh(self.raw_alpha) #* 0.1
+        alpha = 1 + torch.tanh(self.raw_alpha)
 
         # x가 (N, C, H, W)라고 가정
         alpha = alpha.view(1, -1, 1, 1)
         x_prime = x.detach()  # x의 연산 그래프를 끊어서 x_prime으로 사용
+
         x =  alpha * ( torch.sign(x) * (torch.abs(x) + self.eps) ** alpha)
         return scaling_func(x, x_prime)
 
